@@ -1,19 +1,41 @@
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
+# ----------------------- CMD INFO / README -----------------------
+$cmdInfo = @"
+NTSELECTFILE - v2.0
+-----------------------------
+Buttons:
+- Run Program: Launch selected file
+- Browse: Manually select file
+- Easy Mode Search: Search common folders (Program Files, System32)
+- HyperGod Scan: Full system scan; Slow mode can lag
+- Settings: Enable/disable Slow HyperGod, File Type Filter, Run as Admin
+- God Mode Folder: Optional bonus (created from HyperGod / Settings)
+Settings defaults: All off
+ListView: Shows first 50 items to prevent lag
+File Type Filter: Optional, off by default, can be enabled in Settings
+"@
+
+Write-Host $cmdInfo -ForegroundColor Cyan
+
 # ----------------------- Relaunch as Admin -----------------------
 function Relaunch-AsAdmin {
-    $scriptPath = $MyInvocation.MyCommand.Path
-    $psi = New-Object System.Diagnostics.ProcessStartInfo
-    $psi.FileName = (Get-Command pwsh -ErrorAction SilentlyContinue).Path
-    if (-not $psi.FileName) { $psi.FileName = (Get-Command powershell).Path }
-    $psi.Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`""
-    $psi.Verb = "runas"
-    try {
-        [System.Diagnostics.Process]::Start($psi) | Out-Null
-        exit
-    } catch {
-        [System.Windows.Forms.MessageBox]::Show("User canceled UAC.","NTSELECTFILE")
+    if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltinRole]::Administrator)) {
+        $scriptPath = $MyInvocation.MyCommand.Path
+        $psi = New-Object System.Diagnostics.ProcessStartInfo
+        $psi.FileName = (Get-Command pwsh -ErrorAction SilentlyContinue).Path
+        if (-not $psi.FileName) { $psi.FileName = (Get-Command powershell).Path }
+        $psi.Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`""
+        $psi.Verb = "runas"
+        try {
+            [System.Diagnostics.Process]::Start($psi) | Out-Null
+            exit
+        } catch {
+            [System.Windows.Forms.MessageBox]::Show("User canceled UAC.","NTSELECTFILE")
+        }
+    } else {
+        [System.Windows.Forms.MessageBox]::Show("Already running as Administrator.","NTSELECTFILE")
     }
 }
 
@@ -45,42 +67,42 @@ $form.Controls.Add($listView)
 # Run button
 $runButton = New-Object System.Windows.Forms.Button
 $runButton.Text = "Run Program"
-$runButton.Size = New-Object System.Drawing.Size(120,30)
+$runButton.Size = New-Object System.Drawing.Size(160,30)
 $runButton.Location = New-Object System.Drawing.Point(20,480)
 $form.Controls.Add($runButton)
 
 # Browse button
 $browseButton = New-Object System.Windows.Forms.Button
 $browseButton.Text = "Browse"
-$browseButton.Size = New-Object System.Drawing.Size(120,30)
-$browseButton.Location = New-Object System.Drawing.Point(160,480)
+$browseButton.Size = New-Object System.Drawing.Size(160,30)
+$browseButton.Location = New-Object System.Drawing.Point(200,480)
 $form.Controls.Add($browseButton)
 
 # Easy mode button
 $easyButton = New-Object System.Windows.Forms.Button
 $easyButton.Text = "Easy Mode Search"
-$easyButton.Size = New-Object System.Drawing.Size(180,30)
-$easyButton.Location = New-Object System.Drawing.Point(300,480)
+$easyButton.Size = New-Object System.Drawing.Size(200,30)
+$easyButton.Location = New-Object System.Drawing.Point(380,480)
 $form.Controls.Add($easyButton)
 
 # Hypergod button
 $hyperButton = New-Object System.Windows.Forms.Button
 $hyperButton.Text = "HyperGod Scan"
-$hyperButton.Size = New-Object System.Drawing.Size(180,30)
-$hyperButton.Location = New-Object System.Drawing.Point(500,480)
+$hyperButton.Size = New-Object System.Drawing.Size(200,30)
+$hyperButton.Location = New-Object System.Drawing.Point(580,480)
 $form.Controls.Add($hyperButton)
 
 # Settings button
 $settingsButton = New-Object System.Windows.Forms.Button
 $settingsButton.Text = "Settings"
-$settingsButton.Size = New-Object System.Drawing.Size(120,30)
-$settingsButton.Location = New-Object System.Drawing.Point(700,480)
+$settingsButton.Size = New-Object System.Drawing.Size(160,30)
+$settingsButton.Location = New-Object System.Drawing.Point(780,480)
 $form.Controls.Add($settingsButton)
 
 # ----------------------- SETTINGS FORM -----------------------
 $settingsForm = New-Object System.Windows.Forms.Form
 $settingsForm.Text = "Settings"
-$settingsForm.Size = New-Object System.Drawing.Size(400,200)
+$settingsForm.Size = New-Object System.Drawing.Size(400,250)
 $settingsForm.StartPosition = "CenterScreen"
 $settingsForm.BackColor = "Black"
 $settingsForm.ForeColor = "White"
@@ -96,9 +118,15 @@ $hyperCheck.Text = "Enable Slow HyperGod Mode"
 $hyperCheck.Location = New-Object System.Drawing.Point(20,70)
 $settingsForm.Controls.Add($hyperCheck)
 
+$fileTypeCheck = New-Object System.Windows.Forms.CheckBox
+$fileTypeCheck.Text = "Enable File Type Filter in Search"
+$fileTypeCheck.Location = New-Object System.Drawing.Point(20,110)
+$settingsForm.Controls.Add($fileTypeCheck)
+
 $backButton = New-Object System.Windows.Forms.Button
 $backButton.Text = "Back"
-$backButton.Location = New-Object System.Drawing.Point(20,120)
+$backButton.Size = New-Object System.Drawing.Size(160,30)
+$backButton.Location = New-Object System.Drawing.Point(20,160)
 $settingsForm.Controls.Add($backButton)
 
 # ----------------------- SWITCH LOGIC -----------------------
@@ -120,7 +148,17 @@ $searchBox.Add_TextChanged({
     $listView.Items.Clear()
     if ($searchBox.Text.Length -gt 0) {
         $pattern = "*$($searchBox.Text)*"
-        $files = Get-ChildItem -Path C:\ -Recurse -ErrorAction SilentlyContinue -Include *.exe | Where-Object { $_.Name -like $pattern }
+        $files = Get-ChildItem -Path C:\ -Recurse -ErrorAction SilentlyContinue
+        
+        if ($fileTypeCheck.Checked) {
+            $fileType = Read-Host "Enter file extension (e.g., exe, txt)"
+            if ($fileType) { $files = $files | Where-Object { $_.Name -like $pattern -and $_.Extension -eq ".$fileType" } }
+            else { $files = $files | Where-Object { $_.Name -like $pattern } }
+        } else {
+            $files = $files | Where-Object { $_.Name -like $pattern }
+        }
+
+        $files = $files | Select-Object -First 50   # limit to 50 results
         foreach ($f in $files) {
             $item = New-Object System.Windows.Forms.ListViewItem($f.Name)
             $item.SubItems.Add($f.FullName)
@@ -135,6 +173,7 @@ $easyButton.Add_Click({
     $commonDirs = @("C:\Program Files","C:\Program Files (x86)","C:\Windows\System32")
     foreach ($dir in $commonDirs) {
         $files = Get-ChildItem -Path $dir -Filter *.exe -Recurse -ErrorAction SilentlyContinue
+        $files = $files | Select-Object -First 50
         foreach ($f in $files) {
             $item = New-Object System.Windows.Forms.ListViewItem($f.Name)
             $item.SubItems.Add($f.FullName)
@@ -146,18 +185,16 @@ $easyButton.Add_Click({
 # ----------------------- HYPERGOD -----------------------
 $hyperButton.Add_Click({
     $listView.Items.Clear()
+    $files = Get-ChildItem -Path C:\ -Filter *.exe -Recurse -ErrorAction SilentlyContinue
     if ($hyperCheck.Checked) {
-        # Slow mode (lag, unresponsive, notification)
-        $files = Get-ChildItem -Path C:\ -Filter *.exe -Recurse -ErrorAction SilentlyContinue
         foreach ($f in $files) {
             $item = New-Object System.Windows.Forms.ListViewItem($f.Name)
             $item.SubItems.Add($f.FullName)
             $listView.Items.Add($item) | Out-Null
         }
-        [System.Windows.Forms.MessageBox]::Show("HyperGod scan finished.","NTSELECTFILE")
+        [System.Windows.Forms.MessageBox]::Show("HyperGod scan finished (Slow mode).","NTSELECTFILE")
     } else {
-        # Fast mode
-        $files = Get-ChildItem -Path C:\ -Filter *.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 500
+        $files = $files | Select-Object -First 50
         foreach ($f in $files) {
             $item = New-Object System.Windows.Forms.ListViewItem($f.Name)
             $item.SubItems.Add($f.FullName)
